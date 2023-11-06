@@ -1,0 +1,637 @@
+#!/usr/bin/env python3
+#
+# This file is part of Cookiescope.
+#
+# Cookiescope is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Cookiescope is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Cookiescope.  If not, see <https://www.gnu.org/licenses/>.
+
+"""
+Cookie scope.
+
+Queries and displays browser cookies.
+
+See command line help text for more information.
+
+Binary cookies parsing code was originally based on this project:
+
+https://github.com/ktnjared/BinaryCookieReader.git
+
+It has been heavily modified and expanded here. The original code is probably
+not recognizable at this point.
+"""
+
+import argparse
+import os
+import sqlite3
+import sys
+from abc import ABC, abstractmethod
+from io import BytesIO
+from collections import namedtuple
+from pathlib import Path
+from struct import unpack
+from time import strftime, gmtime
+from typing import AnyStr, IO, Iterable, Self
+from urllib.parse import unquote
+
+#: Command line help description.
+CLI_DESCRIPTION = 'Cookie query tool.'
+#: Command line help epilog text.
+CLI_EPILOG = '''
+Cookie source can be a browser name, e.g. "safari", or a cookies file path.
+
+Filter values match full or partial attribute values. Multiple filter values can
+be comma-separated. For the comparison, filter values are HTTP-quoted and
+lower-cased, and cookie fields are HTTP-unquoted and also lower-cased.
+
+Frequently-used attribute names:
+  * value - primary cookie data field
+  * name - cookie name
+  * domain - website domain responsible for cookie 
+  * path - website location path string 
+'''.strip()
+#: Cookie type (plain string dictionary).
+Cookie = dict[str, str]
+#: ORed attribute filter values.
+Filter = tuple[str, list[str]]
+#: ANDed filters.
+FilterBy = Iterable[Filter]
+#: Sort by as sequence of attribute names.
+SortBy = Iterable[str]
+#: Mapping of platform to possible file locations.
+LocationMap = dict[str, Iterable[str | Path]]
+#: Default attribute sort by "clause".
+DEFAULT_SORT_BY = ['domain', 'path']
+#: Attribute display order.
+ATTRIBUTE_DISPLAY_ORDER = ['domain', 'name', 'path', 'value', 'flags', 'expires', 'created']
+
+
+class BrowserBase(ABC):
+    """Abstract browser class."""
+
+    def __init__(self, file_path: Path = None):
+        """
+        Browser base constructor.
+
+        Args:
+            file_path: optional user-provided file path
+        """
+        self.file_path = file_path
+
+    def get_cookies_path(self) -> Path:
+        """
+        Get the cookies file path.
+
+        Returns:
+            cookies file path
+        """
+        if self.file_path is not None:
+            return self.file_path
+        return self.locate_cookies_file()
+
+    @abstractmethod
+    def locate_cookies_file(self) -> Path:
+        """
+        Required method to find the cookies file.
+
+        Returns:
+            cookies file path
+        """
+        ...
+
+    @classmethod
+    @abstractmethod
+    def is_my_file(cls, path: Path) -> bool:
+        """
+        Required method to check if a file is supported by the browser.
+
+        Args:
+            path: file path
+
+        Returns:
+            True if the file is supported
+        """
+        ...
+
+    @abstractmethod
+    def query_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+        """
+        Required method to query cookies with optional filtering and sorting.
+
+        Args:
+            filter_by: filters as a mapping of attribute names to filtered values
+            sort_by: sort by named attributes in order provided
+        """
+        ...
+
+
+class BinaryCookiesBrowserBase(BrowserBase, ABC):
+    """Abstract base class for browsers with binary cookies files"""
+
+    class _CookieDataExtractor:
+        """Private binary cookies file reader and data extractor/decoder."""
+
+        def __init__(self, stream: IO):
+            """Cookie data extractor constructor."""
+            self._stream = stream
+
+        def get_bytes(self, length: int, expect: bytes = None) -> AnyStr:
+            """Extract bytes, with optional fixed value check."""
+            value = self._stream.read(length)
+            if expect is not None and value != expect:
+                abort(f'Expected bytes "{expect}", found "{value}".')
+            return value
+
+        def get_string(self, length: int, encoding: str = 'utf-8', expect: str = None) -> str:
+            """Extract string, with optional fixed value check."""
+            raw_value = self.get_bytes(length)
+            value = raw_value.decode(encoding)
+            if expect is not None and value != expect:
+                abort(f'Expected string "{expect}", found "{value}".')
+            return value
+
+        def get_header_integer(self) -> int:
+            """Extract integer from file header, which is big-endian format."""
+            return unpack('>i', self.get_bytes(4))[0]
+
+        def get_integer(self) -> int:
+            """Extract integer from body (little-endian)."""
+            return unpack('<i', self.get_bytes(4))[0]
+
+        def get_flags(self) -> str:
+            """Extract cookie flags from binary stream."""
+            flag_parts: list[str] = []
+            flags = self.get_integer()
+            if flags & 0x00000001:
+                flag_parts.append('Secure')
+            if flags & 0x00000004:
+                flag_parts.append('HttpOnly')
+            # if flags & 0xfffffffa:
+            #     flag_parts.append(f'Unknown(0x{flags & 0xfffffffa:08x})')
+            return '; '.join(flag_parts)
+
+        def get_attribute(self) -> str:
+            """Extract attribute string from binary stream."""
+            value = ''
+            byte = self.get_bytes(1)
+            while unpack('<b', byte)[0] != 0:
+                value += byte.decode('utf-8')
+                byte = self.get_bytes(1)
+            return value
+
+        def get_date_time(self) -> str:
+            """Extract date/time string."""
+            # Expiry date is in Mac epoch format: Starts from 1/Jan/2001
+            expiry_date_epoch = unpack('<d', self.get_bytes(8))[0] + 978307200
+            # 978307200 is unix epoch of  1/Jan/2001
+            return strftime('%c', gmtime(expiry_date_epoch))
+
+        def get_block(self, length) -> Self:
+            """Get sub-extractor for block of data."""
+            return self.__class__(BytesIO(self.get_bytes(length)))
+
+        def set_offset(self, offset: int):
+            """Seek to offset."""
+            self._stream.seek(offset)
+
+    @classmethod
+    def is_my_file(cls, path: Path) -> bool:
+        """Override abstract base class method to recognize binary cookies files."""
+        with path.open('rb') as binary_file:
+            extractor = cls._CookieDataExtractor(binary_file)
+            return extractor.get_string(4, encoding='ascii') == 'cook'
+
+    def query_cookies(self,
+                      filter_by: FilterBy = None,
+                      sort_by: SortBy = None,
+                      ) -> Iterable[Cookie]:
+        """Required override: query cookies with optional filtering and sorting."""
+        filtered_cookies = filter_cookies(self._get_all_cookies(), filter_by)
+        return sort_cookies(filtered_cookies, sort_by)
+
+    def _get_all_cookies(self) -> Iterable[Cookie]:
+        """Get all cookies."""
+        path = self.get_cookies_path().expanduser()
+        if not path.is_file():
+            abort(f'Binary cookies file does not exist: {path}')
+        with path.open('rb') as binary_file:
+            extractor = self._CookieDataExtractor(binary_file)
+            extractor.get_string(4, encoding='ascii', expect='cook')
+            num_pages = extractor.get_header_integer()
+            page_sizes = [extractor.get_header_integer() for _idx in range(num_pages)]
+            page_blocks = [extractor.get_block(length) for length in page_sizes]
+            for page_block in page_blocks:
+                page_block.get_bytes(4, expect=bytes([0, 0, 1, 0]))
+                num_cookies = page_block.get_integer()
+                cookie_offsets = [page_block.get_integer() for _idx in range(num_cookies)]
+                page_block.get_bytes(4, expect=bytes([0, 0, 0, 0]))
+                for offset in cookie_offsets:
+                    cookie = {}
+                    page_block.set_offset(offset)
+                    cookie_size = page_block.get_integer()
+                    cookie_block = page_block.get_block(cookie_size)
+                    cookie_block.get_bytes(4)  # unknown
+                    flags = cookie_block.get_flags()
+                    if flags:
+                        cookie['flags'] = flags
+                    cookie_block.get_bytes(4)  # unknown
+                    url_offset = cookie_block.get_integer()
+                    name_offset = cookie_block.get_integer()
+                    path_offset = cookie_block.get_integer()
+                    value_offset = cookie_block.get_integer()
+                    cookie_block.get_bytes(8)  # end of cookie
+                    cookie['expires'] = cookie_block.get_date_time()
+                    cookie['created'] = cookie_block.get_date_time()
+                    cookie_block.set_offset(url_offset - 4)
+                    cookie['domain'] = cookie_block.get_attribute()
+                    cookie_block.set_offset(name_offset - 4)
+                    cookie['name'] = cookie_block.get_attribute()
+                    cookie_block.set_offset(path_offset - 4)
+                    cookie['path'] = cookie_block.get_attribute()
+                    cookie_block.set_offset(value_offset - 4)
+                    cookie['value'] = cookie_block.get_attribute()
+                    yield cookie
+
+
+class SafariBrowser(BinaryCookiesBrowserBase):
+    """Safari browser implementation."""
+
+    cookies_paths: LocationMap = {
+        'darwin': [
+            '~/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies',
+            '~/Library/Cookies/Cookies.binarycookies',
+        ],
+    }
+
+    def locate_cookies_file(self) -> Path:
+        """Override abstract base class method to locate the cookies file."""
+        return find_cookies_file('Safari', self.cookies_paths)
+
+
+class SQLiteCookiesBrowserBase(BrowserBase, ABC):
+    """Abstract base class for browsers with cookies in a SQLite database."""
+
+    #: Table name. Sub-class should override if table name is not "cookies".
+    table: str = 'cookies'
+    #: Target row named tuple.
+    TargetRow = namedtuple(
+        'TargetRow',
+        [
+            'domain',
+            'name',
+            'value',
+            'path',
+            'expires',
+            'created',
+            'is_httponly',
+            'is_secure',
+        ]
+    )
+    #: Source row named tuple, if different from target row.
+    SourceRow = TargetRow
+
+    @classmethod
+    def is_my_file(cls, path: Path) -> bool:
+        """Override abstract base class method to recognize cookies database."""
+        try:
+            connection = sqlite3.connect(path)
+            cursor = connection.execute(
+                f"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{cls.table}';")
+            return cursor.fetchone()[0] != 0
+        except sqlite3.Error:
+            return False
+
+    def post_process_row(self, source_row: SourceRow) -> TargetRow:
+        """
+        Override-able method to convert source to target row format.
+
+        Args:
+            source_row: source row named tuple
+
+        Returns:
+            target row named tuple
+        """
+        return source_row
+
+    def query_cookies(self,
+                      filter_by: FilterBy = None,
+                      sort_by: SortBy = None,
+                      ) -> Iterable[Cookie]:
+        """Required override: query cookies with optional filtering and sorting."""
+        db_path = self.get_cookies_path()
+        connection = sqlite3.connect(db_path)
+        cursor = connection.cursor()
+        query = f'SELECT {", ".join(self.SourceRow._fields)} FROM {self.table}'
+        cursor.execute(query)
+        cookies = [self._row_to_cookie(row) for row in cursor.fetchall()]
+        cursor.close()
+        filtered_cookies = filter_cookies(cookies, filter_by)
+        return sort_cookies(filtered_cookies, sort_by)
+
+    def _row_to_cookie(self, row: Iterable):
+        """Convert DB row to cookie dictionary."""
+        source_row = self.SourceRow(*row)
+        target_row = self.post_process_row(source_row)
+        cookie = {
+            'domain': target_row.domain,
+            'name': target_row.name,
+            'value': target_row.value,
+            'path': target_row.path,
+        }
+        flag_parts: list[str] = []
+        if target_row.is_httponly:
+            flag_parts.append('HttpOnly')
+        if target_row.is_secure:
+            flag_parts.append('Secure')
+        if flag_parts:
+            cookie['flags'] = '; '.join(flag_parts)
+        if target_row.expires:
+            cookie['expires'] = strftime('%c', gmtime(target_row.expires))
+        if target_row.created:
+            cookie['created'] = strftime('%c', gmtime(target_row.created))
+        return cookie
+
+
+class ChromeBrowser(SQLiteCookiesBrowserBase):
+    """Chrome browser implementation."""
+
+    table = 'cookies'
+
+    SourceRow = namedtuple(
+        'SourceRow',
+        [
+            'host_key',
+            'name',
+            'encrypted_value',
+            'path',
+            'expires_utc',
+            'creation_utc',
+            'is_httponly',
+            'is_secure',
+        ]
+    )
+
+    db_paths: LocationMap = {
+        'darwin': [
+            '~/Library/Application Support/Google/Chrome/Default/Cookies',
+        ],
+    }
+
+    def locate_cookies_file(self) -> Path:
+        """Override abstract base class method to locate the cookies database."""
+        return find_cookies_file('Chrome', self.db_paths)
+
+    def post_process_row(self, source_row: SourceRow) -> SQLiteCookiesBrowserBase.TargetRow:
+        """Override that converts a DB source row to a target row named tuple."""
+        return self.TargetRow(
+            domain=source_row.host_key,
+            name=source_row.name,
+            value=f'({len(source_row.encrypted_value)} byte encrypted value)',
+            path=source_row.path,
+            expires=source_row.expires_utc,
+            created=source_row.creation_utc,
+            is_httponly=source_row.is_httponly,
+            is_secure=source_row.is_secure,
+        )
+
+
+class FirefoxBrowser(SQLiteCookiesBrowserBase):
+    """Firefox browser implementation."""
+
+    table = 'moz_cookies'
+
+    SourceRow = namedtuple(
+        'SourceRow',
+        [
+            'host',
+            'name',
+            'value',
+            'path',
+            'expiry',
+            'creationTime',
+            'isHttpOnly',
+            'isSecure',
+        ]
+    )
+
+    db_paths: LocationMap = {
+    }
+
+    def locate_cookies_file(self) -> Path:
+        """Override abstract base class method to locate the cookies database."""
+        return find_cookies_file('Firefox', self.db_paths)
+
+    def post_process_row(self, source_row: SourceRow) -> SQLiteCookiesBrowserBase.TargetRow:
+        """Override that converts a DB source row to a target row named tuple."""
+        return self.TargetRow(
+            domain=source_row.host,
+            name=source_row.name,
+            value=source_row.value,
+            path=source_row.path,
+            expires=source_row.expiry,
+            created=source_row.creationTime,
+            is_httponly=source_row.isHttpOnly,
+            is_secure=source_row.isSecure,
+        )
+
+
+def find_cookies_file(browser: str, paths: LocationMap) -> Path:
+    """
+    Utility function to discover cookies file given multiple possible paths.
+
+    Args:
+        browser: browser name for error messages
+        paths: possible file locations mapped by platform
+
+    Returns:
+        found path
+    """
+    if sys.platform not in paths:
+        abort(f'Unable to locate the {browser} cookies file on this operating system.')
+    for path in paths[sys.platform]:
+        path = Path(path).expanduser()
+        if path.is_file():
+            return path
+    abort(f'{browser} cookies file not found.')
+
+
+def warning(message):
+    """
+    Display warning message.
+
+    Args:
+        message: warning message
+    """
+    sys.stderr.write(f'WARNING: {message}\n')
+
+
+def error(message):
+    """
+    Display error message.
+
+    Args:
+        message: error message
+    """
+    sys.stderr.write(f'ERROR: {message}\n')
+
+
+def abort(message):
+    """
+    Display error message and quit.
+
+    Args:
+        message: error message
+    """
+    error(message)
+    sys.exit(1)
+
+
+def get_filter_by(filter_exprs: Iterable[str]) -> FilterBy:
+    """
+    Convert name=value raw filter expressions to filter-by list.
+
+    Values strings are HTTP-escaped. Multiple values may be comma-separated.
+
+    Args:
+        filter_exprs: name=value filter expressions
+
+    Returns:
+        dictionary mapping attribute names to lists of partial values
+    """
+    filters: list[Filter] = []
+    for filter_expr in filter_exprs:
+        filter_expr_parts = filter_expr.split('=', maxsplit=1)
+        if len(filter_expr_parts) != 2 or not filter_expr_parts[1]:
+            abort(f'Bad name=value filter expression: {filter_expr}')
+        filters.append((filter_expr_parts[0], filter_expr_parts[1].split(',')))
+    return filters
+
+
+def filter_cookies(unfiltered_cookies: Iterable[Cookie],
+                   filter_by: FilterBy | None,
+                   ) -> Iterable[Cookie]:
+    """
+    Filter cookies.
+
+    Filters are ANDed together. Filter values are ORed together.
+
+    Args:
+        unfiltered_cookies: unfiltered input cookies
+        filter_by: optional (name, values) filter pairs
+
+    Returns:
+        iterable filtered cookies
+    """
+    if filter_by is None:
+        return unfiltered_cookies
+    # Lower-case the filter values for normalized comparison.
+    filter_by = [(name, [value.lower() for value in values]) for name, values in filter_by]
+    for cookie in unfiltered_cookies:
+        for name, values in filter_by:
+            if name not in cookie:
+                break
+            for value in values:
+                # Normalize comparison by un-quoting and lower-casing cookie values.
+                if unquote(cookie[name]).lower().find(value) == -1:
+                    break
+            else:
+                continue
+            break
+        else:
+            yield cookie
+
+
+def sort_cookies(unsorted_cookies: Iterable[Cookie],
+                 sort_by: SortBy | None,
+                 ) -> Iterable[Cookie]:
+    """
+    Sort cookies.
+
+    Args:
+        unsorted_cookies: unsorted input cookies
+        sort_by: optional attribute names to sort by in priority order
+
+    Returns:
+        iterable sorted cookies
+    """
+    if sort_by is None:
+        return unsorted_cookies
+    return sorted(unsorted_cookies, key=lambda c: [c[k] for k in sort_by])
+
+
+def display_cookies(cookies: Iterable[Cookie]):
+    """
+    Display cookies.
+
+    Args:
+        cookies: iterable cookies to display
+    """
+    for cookie in cookies:
+        # Don't assume all possible keys are present in cookie.
+        keys1 = [key for key in ATTRIBUTE_DISPLAY_ORDER if key in cookie]
+        keys2 = sorted([key for key in cookie.keys() if key not in keys1])
+        print('')
+        for key in keys1 + keys2:
+            print(f'{key}={unquote(cookie[key])}')
+
+
+BROWSERS: dict[str, type[BrowserBase]] = {
+    'chrome': ChromeBrowser,
+    'firefox': FirefoxBrowser,
+    'safari': SafariBrowser,
+}
+
+
+def get_browser_for_cookie_source(cookie_source: str) -> BrowserBase:
+    """
+    Get browser object based on cookie source (file path or browser name).
+
+    Args:
+        cookie_source: file path or browser name
+
+    Returns:
+        browser object for processing query
+    """
+    if os.path.isfile(cookie_source):
+        file_path = Path(cookie_source)
+        for browser_class in BROWSERS.values():
+            if browser_class.is_my_file(file_path):
+                return browser_class(file_path=file_path)
+        abort('Unable to identify browser for file provided.')
+    if os.path.sep in cookie_source:
+        abort('File not found.')
+    browser_name = cookie_source.lower()
+    if browser_name not in BROWSERS:
+        abort(f'Browser not supported: {browser_name}')
+    return BROWSERS[browser_name]()
+
+
+def main():
+    """Main function."""
+    arg_parser = argparse.ArgumentParser(
+        description=CLI_DESCRIPTION,
+        epilog=CLI_EPILOG,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    arg_parser.add_argument(dest='COOKIE_SOURCE',
+                            help='cookies file path or known browser name')
+    arg_parser.add_argument(dest='FILTER', nargs='*',
+                            help='name=value expression for filtering on cookie fields')
+    args = arg_parser.parse_args()
+    filter_by = get_filter_by(args.FILTER)
+    browser = get_browser_for_cookie_source(args.COOKIE_SOURCE)
+    cookies = browser.query_cookies(filter_by=filter_by, sort_by=DEFAULT_SORT_BY)
+    display_cookies(cookies)
+
+
+if __name__ == '__main__':
+    main()
