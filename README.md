@@ -26,7 +26,7 @@ For any developer that wishes to extend it, the framework is designed for easy
 expansion and adaptation.
 
 **The current project owner would be more than happy to hand off ownership of
-this project.** Ideally, it would someone who is willing to invest time in
+this project.** Ideally, it would to someone who is willing to invest time in
 increasing browser/OS coverage, fixing bugs, and providing support.
 
 ## Credits
