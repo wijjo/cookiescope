@@ -34,6 +34,7 @@ import argparse
 import os
 import sqlite3
 import sys
+from configparser import ConfigParser
 from abc import ABC, abstractmethod
 from io import BytesIO
 from collections import namedtuple
@@ -47,7 +48,10 @@ from urllib.parse import unquote
 CLI_DESCRIPTION = 'Cookie query tool.'
 #: Command line help epilog text.
 CLI_EPILOG = '''
-Cookie source can be a browser name, e.g. "safari", or a cookies file path.
+Cookie source can be a browser name, e.g. "safari", or a cookies file path. A
+browser name can followed by ":<profile>" to specify a user profile. E.g.
+"firefox:lucy" targets the Firefox profile named "lucy". Otherwise it works with
+the default profile.
 
 Filter values match full or partial attribute values. Multiple filter values can
 be comma-separated. For the comparison, filter values are HTTP-quoted and
@@ -59,6 +63,9 @@ Frequently-used attribute names:
   * domain - website domain responsible for cookie 
   * path - website location path string 
 '''.strip()
+#: Cookie source argument help.
+COOKIE_SOURCE_HELP = 'cookies path or browser[:profile]'
+FILTER_HELP = 'name=value expression for filtering on cookie fields'
 #: Cookie type (plain string dictionary).
 Cookie = dict[str, str]
 #: ORed attribute filter values.
@@ -78,30 +85,23 @@ ATTRIBUTE_DISPLAY_ORDER = ['domain', 'name', 'path', 'value', 'flags', 'expires'
 class BrowserBase(ABC):
     """Abstract browser class."""
 
-    def __init__(self, file_path: Path = None):
+    def __init__(self, file_path: Path):
         """
         Browser base constructor.
 
         Args:
-            file_path: optional user-provided file path
+            file_path: cookies file or database path
         """
         self.file_path = file_path
 
-    def get_cookies_path(self) -> Path:
-        """
-        Get the cookies file path.
-
-        Returns:
-            cookies file path
-        """
-        if self.file_path is not None:
-            return self.file_path
-        return self.locate_cookies_file()
-
+    @classmethod
     @abstractmethod
-    def locate_cookies_file(self) -> Path:
+    def locate_cookies_file(cls, profile: str | None) -> Path:
         """
         Required method to find the cookies file.
+
+        Args:
+            profile: optional profile name
 
         Returns:
             cookies file path
@@ -220,10 +220,7 @@ class BinaryCookiesBrowserBase(BrowserBase, ABC):
 
     def _get_all_cookies(self) -> Iterable[Cookie]:
         """Get all cookies."""
-        path = self.get_cookies_path().expanduser()
-        if not path.is_file():
-            abort(f'Binary cookies file does not exist: {path}')
-        with path.open('rb') as binary_file:
+        with self.file_path.open('rb') as binary_file:
             extractor = self._CookieDataExtractor(binary_file)
             extractor.get_string(4, encoding='ascii', expect='cook')
             num_pages = extractor.get_header_integer()
@@ -272,9 +269,10 @@ class SafariBrowser(BinaryCookiesBrowserBase):
         ],
     }
 
-    def locate_cookies_file(self) -> Path:
+    @classmethod
+    def locate_cookies_file(cls, profile: str | None) -> Path:
         """Override abstract base class method to locate the cookies file."""
-        return find_cookies_file('Safari', self.cookies_paths)
+        return find_file('Safari cookies', cls.cookies_paths)
 
 
 class SQLiteCookiesBrowserBase(BrowserBase, ABC):
@@ -327,8 +325,7 @@ class SQLiteCookiesBrowserBase(BrowserBase, ABC):
                       sort_by: SortBy = None,
                       ) -> Iterable[Cookie]:
         """Required override: query cookies with optional filtering and sorting."""
-        db_path = self.get_cookies_path()
-        connection = sqlite3.connect(db_path)
+        connection = sqlite3.connect(self.file_path)
         cursor = connection.cursor()
         query = f'SELECT {", ".join(self.SourceRow._fields)} FROM {self.table}'
         cursor.execute(query)
@@ -386,9 +383,10 @@ class ChromeBrowser(SQLiteCookiesBrowserBase):
         ],
     }
 
-    def locate_cookies_file(self) -> Path:
+    @classmethod
+    def locate_cookies_file(cls, profile: str | None) -> Path:
         """Override abstract base class method to locate the cookies database."""
-        return find_cookies_file('Chrome', self.db_paths)
+        return find_file('Chrome cookies database', cls.db_paths)
 
     def post_process_row(self, source_row: SourceRow) -> SQLiteCookiesBrowserBase.TargetRow:
         """Override that converts a DB source row to a target row named tuple."""
@@ -423,12 +421,38 @@ class FirefoxBrowser(SQLiteCookiesBrowserBase):
         ]
     )
 
-    db_paths: LocationMap = {
+    profiles_ini_paths: LocationMap = {
+        'darwin': [
+            '~/Library/Application Support/Firefox/profiles.ini',
+        ],
     }
 
-    def locate_cookies_file(self) -> Path:
+    @classmethod
+    def locate_cookies_file(cls, profile: str | None) -> Path:
         """Override abstract base class method to locate the cookies database."""
-        return find_cookies_file('Firefox', self.db_paths)
+        # NB: Firefox seems to be a bit flakey with how it handles finding the
+        # active profile. So in some cases users may need to explicitly specify
+        # a profile, because the default may not actually be active.
+        profiles = ConfigParser()
+        profiles_ini_path = find_file('Firefox profiles configuration',
+                                      cls.profiles_ini_paths)
+        parsed_files = profiles.read(profiles_ini_path)
+        if not parsed_files:
+            abort(f'Unable to parse Firefox profiles configuration: {profiles_ini_path}')
+        for section in profiles.sections():
+            # Match the profile name or find the default profile.
+            if ((profile and profiles.get(section, 'Name', fallback=None) == profile)
+                    or (not profile and profiles.get(section, 'Default', fallback=0))):
+                profile_path = profiles.get(section, 'Path', fallback=None)
+                if not profile_path:
+                    error(f'Unexpected missing path in Firefox profiles.ini.')
+                    break
+                if profiles.get(section, 'IsRelative', fallback=0):
+                    full_profile_path = profiles_ini_path.parent / profile_path
+                else:
+                    full_profile_path = Path(profile_path)
+                return full_profile_path / 'cookies.sqlite'
+        abort(f'Firefox cookies database not found.')
 
     def post_process_row(self, source_row: SourceRow) -> SQLiteCookiesBrowserBase.TargetRow:
         """Override that converts a DB source row to a target row named tuple."""
@@ -444,24 +468,24 @@ class FirefoxBrowser(SQLiteCookiesBrowserBase):
         )
 
 
-def find_cookies_file(browser: str, paths: LocationMap) -> Path:
+def find_file(label: str, location_map: LocationMap) -> Path:
     """
-    Utility function to discover cookies file given multiple possible paths.
+    Utility function to search for a file given multiple possible platform-specific paths.
 
     Args:
-        browser: browser name for error messages
-        paths: possible file locations mapped by platform
+        label: label describing file for displayed messages
+        location_map: possible file locations mapped by platform
 
     Returns:
         found path
     """
-    if sys.platform not in paths:
-        abort(f'Unable to locate the {browser} cookies file on this operating system.')
-    for path in paths[sys.platform]:
+    if sys.platform not in location_map:
+        abort(f'Unable to locate the {label} file on this operating system.')
+    for path in location_map[sys.platform]:
         path = Path(path).expanduser()
         if path.is_file():
             return path
-    abort(f'{browser} cookies file not found.')
+    abort(f'{label} file not found.')
 
 
 def warning(message):
@@ -609,10 +633,16 @@ def get_browser_for_cookie_source(cookie_source: str) -> BrowserBase:
         abort('Unable to identify browser for file provided.')
     if os.path.sep in cookie_source:
         abort('File not found.')
-    browser_name = cookie_source.lower()
+    cookie_source_parts = cookie_source.lower().split(':', maxsplit=1)
+    if len(cookie_source_parts) == 2:
+        browser_name, profile = cookie_source_parts
+    else:
+        browser_name, profile = cookie_source_parts[0], None
     if browser_name not in BROWSERS:
         abort(f'Browser not supported: {browser_name}')
-    return BROWSERS[browser_name]()
+    browser_class = BROWSERS[browser_name]
+    file_path = browser_class.locate_cookies_file(profile)
+    return browser_class(file_path)
 
 
 def main():
@@ -622,10 +652,8 @@ def main():
         epilog=CLI_EPILOG,
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    arg_parser.add_argument(dest='COOKIE_SOURCE',
-                            help='cookies file path or known browser name')
-    arg_parser.add_argument(dest='FILTER', nargs='*',
-                            help='name=value expression for filtering on cookie fields')
+    arg_parser.add_argument(dest='COOKIE_SOURCE', help=COOKIE_SOURCE_HELP)
+    arg_parser.add_argument(dest='FILTER', nargs='*', help=FILTER_HELP)
     args = arg_parser.parse_args()
     filter_by = get_filter_by(args.FILTER)
     browser = get_browser_for_cookie_source(args.COOKIE_SOURCE)
