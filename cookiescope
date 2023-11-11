@@ -847,7 +847,6 @@ class FirefoxBrowser(BrowserBase):
                     return None
         # Otherwise look for default profile with cookie file.
         for section in profiles.sections():
-            name = profiles.get(section, 'Name', fallback=None)
             default = profiles.get(section, 'Default', fallback=None)
             if default:
                 # Handle the complication of an "Install..." profile providing
@@ -858,12 +857,13 @@ class FirefoxBrowser(BrowserBase):
                     if cookies_db_path.is_file():
                         return cookies_db_path
                     return profiles_ini_path.parent / cookies_db_path
-                cookies_db_path = profiles.get(section, 'Path', fallback=None)
-                if cookies_db_path:
+                profile_folder = profiles.get(section, 'Path', fallback=None)
+                if profile_folder:
                     if profiles.get(section, 'IsRelative', fallback=None):
-                        cookies_db_path = profiles_ini_path.parent / cookies_db_path
+                        profile_folder = profiles_ini_path.parent / profile_folder
                     else:
-                        cookies_db_path = Path(cookies_db_path)
+                        profile_folder = Path(profile_folder)
+                    cookies_db_path = profile_folder / 'cookies.sqlite'
                     if cookies_db_path.is_file():
                         return cookies_db_path
         return None
