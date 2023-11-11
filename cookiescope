@@ -827,7 +827,7 @@ class FirefoxBrowser(BrowserBase):
         for section in profiles.sections():
             name = profiles.get(section, 'Name', fallback=None)
             default = profiles.get(section, 'Default', fallback=None)
-            if default or name:
+            if default:
                 # Handle the complication of an "Install..." profile providing
                 # the active path via the "Default" attribute. That path may be
                 # relative without an "IsRelative" attribute to flag as such.
@@ -842,7 +842,6 @@ class FirefoxBrowser(BrowserBase):
                         cookies_db_path = profiles_ini_path.parent / cookies_db_path
                     else:
                         cookies_db_path = Path(cookies_db_path)
-                    print(f'{cookies_db_path=}')
                     if cookies_db_path.is_file():
                         return cookies_db_path
         return None
