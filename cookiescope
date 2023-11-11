@@ -58,11 +58,17 @@ Filter values match full or partial attribute values. Multiple filter values can
 be comma-separated. For the comparison, filter values are HTTP-quoted and
 lower-cased, and cookie fields are HTTP-unquoted and also lower-cased.
 
+If you have problems accessing an existing cookies file try quitting all running
+browser processes. Some processes may be running in the background, even when
+there are no visible windows.
+
 Frequently-used attribute names:
   * value - primary cookie data field
   * name - cookie name
-  * domain - website domain responsible for cookie 
-  * path - website location path string 
+  * domain - website domain responsible for cookie
+  * path - website location path string
+
+The following named browsers are supported:
 '''.strip()
 #: Cookie source argument help.
 COOKIE_SOURCE_HELP = 'cookies path or browser[:profile]'
@@ -711,6 +717,9 @@ class ChromeBrowser(GenericChromeBrowser):
         'darwin': [
             '~/Library/Application Support/Google/Chrome/Default/Cookies',
         ],
+        'linux': [
+            '~/.config/chrome/Cookies',
+        ],
         'win32': [
             '~/AppData/Local/Google/Chrome/User Data/Default/Network/Cookies',
         ],
@@ -727,6 +736,16 @@ class EdgeBrowser(GenericChromeBrowser):
     }
 
 
+class ChromiumBrowser(GenericChromeBrowser):
+    """Chromium browser implementation."""
+    name = 'Chromium'
+    db_paths: LocationMap = {
+        'linux': [
+            '~/.config/chromium/Default/Cookies',
+        ],
+    }
+
+
 class FirefoxBrowser(BrowserBase):
     """Firefox browser implementation."""
 
@@ -735,6 +754,9 @@ class FirefoxBrowser(BrowserBase):
     profiles_ini_paths: LocationMap = {
         'darwin': [
             '~/Library/Application Support/Firefox/profiles.ini',
+        ],
+        'linux': [
+            '~/.mozilla/firefox/profiles.ini',
         ],
         'win32': [
             '~/AppData/Roaming/Mozilla/Firefox/profiles.ini',
@@ -853,6 +875,7 @@ class FirefoxBrowser(BrowserBase):
 
 NAMED_BROWSERS: dict[str, type[BrowserBase]] = {
     'chrome': ChromeBrowser,
+    'chromium': ChromiumBrowser,
     'edge': EdgeBrowser,
     'firefox': FirefoxBrowser,
     'safari': SafariBrowser,
@@ -862,6 +885,7 @@ FILE_CHECK_BROWSERS: list[type[BrowserBase]] = [
     GenericChromeBrowser,
     FirefoxBrowser,
     SafariBrowser,
+    ChromiumBrowser,
 ]
 
 
@@ -905,9 +929,10 @@ def get_browser_for_cookie_source(cookie_source: str) -> BrowserBase:
 
 def main():
     """Main function."""
+    epilog_parts = [CLI_EPILOG] + [f'  - {name}' for name in sorted(NAMED_BROWSERS.keys())]
     arg_parser = argparse.ArgumentParser(
         description=CLI_DESCRIPTION,
-        epilog=CLI_EPILOG,
+        epilog=os.linesep.join(epilog_parts),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     arg_parser.add_argument(dest='COOKIE_SOURCE', help=COOKIE_SOURCE_HELP)

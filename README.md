@@ -10,17 +10,24 @@ moving target.
 
 See TODO.md for hints about missing features and future enhancements.
 
-## Contact: 
-    
-steve at wijjo.com 
+## Contact:
 
-## Caveats
+steve at wijjo.com
 
-This has only been used with MacOS Safari, except for very brief testing with
-other browsers on MacOS.
+## Notes
 
-Consider it ready to use with MacOS Safari, but more of a framework and starting
-point for other browsers and operating systems.
+This has only been primarily used with MacOS Safari. But it also has been
+tested with other browsers on MacOS, Windows, and Linux.
+
+Here is what is currently supported:
+
+* Safari on MacOS
+* Google Chrome on MacOS and Windows (1)
+* Microsoft Edge on Windows (1)
+* Chromium on Linux (1)
+* Firefox on MacOS, Windows, and Linux
+
+(1) Encrypted values are hidden.
 
 For any developer that wishes to extend it, the framework is designed for easy
 expansion and adaptation.
