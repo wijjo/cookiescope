@@ -1,5 +1,7 @@
 # cookiescope
 
+![Logo](./resources/cookiescope-256.png)
+
 Cookiescope is a command line tool to query browser cookies.
 
 Run `cookiescope -h` or (`--help`) for more information.
