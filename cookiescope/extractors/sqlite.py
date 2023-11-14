@@ -19,10 +19,10 @@ import sqlite3
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from pathlib import Path
-from time import gmtime, strftime
 from typing import Iterable, Iterator
+from urllib.parse import unquote
 
-from cookiescope.cookies import Cookie, FilterBy, SortBy, filter_cookies, sort_cookies
+from cookiescope.cookies import CookieData, FilterBy, SortBy, filter_cookies, sort_cookies
 from cookiescope.utility import open_binary_file
 
 
@@ -40,8 +40,8 @@ class SQLiteCookiesBase(ABC):
             'has_expires',
             'expires_utc',
             'creation_utc',
-            'is_httponly',
-            'is_secure',
+            'httponly',
+            'secure',
         ]
     )
 
@@ -102,9 +102,12 @@ class SQLiteCookiesBase(ABC):
         """
         ...
 
-    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+    def generate_cookies(self,
+                         filter_by: FilterBy,
+                         sort_by: SortBy,
+                         ) -> Iterable[CookieData]:
         """Required override: query cookies with optional filtering and sorting."""
-        def _generate() -> Iterator[Cookie]:
+        def _generate() -> Iterator[CookieData]:
             connection = sqlite3.connect(self.path)
             try:
                 cursor = connection.cursor()
@@ -112,26 +115,16 @@ class SQLiteCookiesBase(ABC):
                     cursor.execute(self.cookie_query)
                     for raw_row in cursor:
                         row = self.canonicalize_row(self.DatabaseRow(*raw_row))
-                        cookie = {
-                            'domain': row.domain,
-                            'name': row.name,
-                            'value': row.value,
-                            'path': row.path,
-                        }
-                        flag_parts: list[str] = []
-                        if row.is_httponly:
-                            flag_parts.append('HttpOnly')
-                        if row.is_secure:
-                            flag_parts.append('Secure')
-                        if flag_parts:
-                            cookie['flags'] = '; '.join(flag_parts)
-                        if row.has_expires:
-                            expires_gm = gmtime(row.expires_utc)
-                            cookie['expires'] = strftime('%c', expires_gm)
-                        if row.creation_utc:
-                            creation_gm = gmtime(row.creation_utc)
-                            cookie['created'] = strftime('%c', creation_gm)
-                        yield cookie
+                        yield CookieData(
+                            domain=row.domain,
+                            name=row.name,
+                            path=row.path,
+                            value=unquote(row.value),
+                            http_only=bool(row.httponly),
+                            secure=bool(row.secure),
+                            expires=row.expires_utc if row.has_expires else 0,
+                            created=row.creation_utc,
+                        )
                 finally:
                     cursor.close()
             finally:

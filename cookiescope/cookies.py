@@ -19,23 +19,93 @@
 Cookiescope cookie types and functions.
 """
 
+from dataclasses import dataclass
+from time import gmtime, strftime
 from typing import Iterable
-from urllib.parse import unquote
+from urllib.parse import quote
 
-from utility import abort
+from utility import abort, warning
 
-#: Cookie type (plain string dictionary).
-Cookie = dict[str, str]
-#: ORed attribute filter values.
+
+@dataclass
+class CookieData:
+    """
+    Cookie data class.
+
+    All strings are unquoted (URL quoting escape sequences replaced).
+
+    Field order below also determines display order.
+    """
+    #: Full or partial domain name.
+    domain: str
+    #: Cookie name.
+    name: str
+    #: Cookie path.
+    path: str
+    #: Cookie value (URL-unquoted data string).
+    value: str
+    #: HTTP-only flag.
+    http_only: bool
+    #: Is-secure flag.
+    secure: bool
+    #: Expiration timestamp (Unix UTC seconds since 1970).
+    expires: int
+    #: Creation timestamp (Unix UTC seconds since 1970 or 0).
+    created: int
+
+    def as_strings(self) -> Iterable[tuple[str, str]]:
+        """
+        Convert fields to (name, value) string pairs
+
+        Returns:
+            iterable (name, value) string pairs
+        """
+        yield 'domain', self.domain
+        yield 'name', self.name
+        yield 'path', self.path
+        yield 'value', self.value
+        yield 'http_only', str(self.http_only).lower()
+        yield 'secure', str(self.secure).lower()
+        if self.expires:
+            yield 'expires', strftime('%c', gmtime(self.expires))
+        if self.created:
+            yield 'created', strftime('%c', gmtime(self.created))
+
+    def as_cookie_file_line(self):
+        """
+        Convert to Netscape cookie file format line.
+
+        See https://curl.se/docs/http-cookies.html.
+
+        Returns:
+            cookie file line
+        """
+        return '\t'.join([
+            f'#HttpOnly_{self.domain}' if self.http_only else self.domain,
+            'TRUE',     # subdomains
+            self.path,
+            'TRUE' if self.secure else 'FALSE',
+            str(self.expires),
+            self.name,
+            quote(self.value),
+        ])
+
+
+# --- Types.
+#: Filter field name and possible values handled with logical OR.
 Filter = tuple[str, list[str]]
-#: ANDed filters.
+#: Multiple filters handled with logical AND.
 FilterBy = Iterable[Filter]
-#: Sort by as sequence of attribute names.
+#: Sorting specified as a sequence of field names.
 SortBy = Iterable[str]
-#: Attribute display order.
-ATTRIBUTE_DISPLAY_ORDER = ['domain', 'name', 'path', 'value', 'flags', 'expires', 'created']
-#: Default attribute sort by "clause".
-DEFAULT_SORT_BY = ['domain', 'path']
+
+# --- Constants.
+#: Field names supported for filtering.
+FILTER_FIELDS = ['domain', 'name', 'path', 'value']
+#: Field names supported for sorting.
+SORT_FIELDS = ['domain', 'name', 'path', 'value']
+#: Default sort fields.
+DEFAULT_SORT_FIELDS = ['domain', 'path']
 
 
 def get_filter_by(filter_exprs: Iterable[str]) -> FilterBy:
@@ -52,16 +122,17 @@ def get_filter_by(filter_exprs: Iterable[str]) -> FilterBy:
     """
     filters: list[Filter] = []
     for filter_expr in filter_exprs:
-        filter_expr_parts = filter_expr.split('=', maxsplit=1)
-        if len(filter_expr_parts) != 2 or not filter_expr_parts[1]:
+        expr_parts = filter_expr.split('=', maxsplit=1)
+        if len(expr_parts) != 2 or not expr_parts[1] or expr_parts[0] not in FILTER_FIELDS:
             abort(f'Bad name=value filter expression: {filter_expr}')
-        filters.append((filter_expr_parts[0], filter_expr_parts[1].split(',')))
+        name, value = expr_parts
+        filters.append((name, value.split(',')))
     return filters
 
 
-def filter_cookies(unfiltered_cookies: Iterable[Cookie],
+def filter_cookies(unfiltered_cookies: Iterable[CookieData],
                    filter_by: FilterBy | None,
-                   ) -> Iterable[Cookie]:
+                   ) -> Iterable[CookieData]:
     """
     Filter cookies.
 
@@ -80,11 +151,12 @@ def filter_cookies(unfiltered_cookies: Iterable[Cookie],
     filter_by = [(name, [value.lower() for value in values]) for name, values in filter_by]
     for cookie in unfiltered_cookies:
         for name, values in filter_by:
-            if name not in cookie:
+            if name not in FILTER_FIELDS:
+                warning(f'Ignoring bad filter field name: {name}')
                 break
             for value in values:
-                # Normalize comparison by un-quoting and lower-casing cookie values.
-                if unquote(cookie[name]).lower().find(value) == -1:
+                # Normalize comparison by lower-casing cookie values.
+                if getattr(cookie, name).lower().find(value) == -1:
                     break
             else:
                 continue
@@ -93,9 +165,9 @@ def filter_cookies(unfiltered_cookies: Iterable[Cookie],
             yield cookie
 
 
-def sort_cookies(unsorted_cookies: Iterable[Cookie],
+def sort_cookies(unsorted_cookies: Iterable[CookieData],
                  sort_by: SortBy | None,
-                 ) -> Iterable[Cookie]:
+                 ) -> Iterable[CookieData]:
     """
     Sort cookies.
 
@@ -106,22 +178,51 @@ def sort_cookies(unsorted_cookies: Iterable[Cookie],
     Returns:
         iterable sorted cookies
     """
-    if sort_by is None:
+    if not sort_by:
         return unsorted_cookies
-    return sorted(unsorted_cookies, key=lambda c: [c[k] for k in sort_by])
+    bad_fields: list[str] = []
+    sort_fields: list[str] = []
+    for sort_field in sort_by:
+        if sort_field in SORT_FIELDS and sort_field not in sort_fields:
+            sort_fields.append(sort_field)
+        else:
+            bad_fields.append(sort_field)
+    if bad_fields:
+        warning(f'Ignoring bad sort field(s): {" ".join(bad_fields)}')
+    if not sort_fields:
+        return unsorted_cookies
+
+    def get_sort_values(cookie: CookieData) -> list[str]:
+        return [getattr(cookie, name) for name in sort_fields]
+
+    return sorted(unsorted_cookies, key=get_sort_values)
 
 
-def display_cookies(cookies: Iterable[Cookie]):
+def display_cookies(cookies: Iterable[CookieData], heading: str = None):
     """
     Display cookies.
 
     Args:
         cookies: iterable cookies to display
+        heading: optional heading to display
     """
+    if heading:
+        print(f'=== {heading} ===')
     for cookie in cookies:
-        # Don't assume all possible keys are present in cookie.
-        keys1 = [key for key in ATTRIBUTE_DISPLAY_ORDER if key in cookie]
-        keys2 = sorted([key for key in cookie.keys() if key not in keys1])
         print('')
-        for key in keys1 + keys2:
-            print(f'{key}={unquote(cookie[key])}')
+        for name, value in cookie.as_strings():
+            print(f'{name}={value}')
+
+
+def display_cookie_jar(cookies: Iterable[CookieData]):
+    """
+    Display cookie jar, i.e. Netscape format text cookies.
+
+    https://curl.se/docs/http-cookies.html
+
+    Args:
+        cookies: cookies to display
+    """
+
+    for cookie in cookies:
+        print(cookie.as_cookie_file_line())

@@ -24,7 +24,7 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Iterable, Self
 
-from cookiescope.cookies import Cookie, FilterBy, SortBy
+from cookiescope.cookies import CookieData, FilterBy, SortBy
 from cookiescope.extractors import SQLiteCookiesBase
 from cookiescope.utility import error
 from .base import BrowserBase, LocationMap
@@ -81,8 +81,8 @@ class FirefoxBrowser(BrowserBase):
                 has_expires=row.expiry,
                 expires_utc=row.expiry,
                 creation_utc=row.creationTime / 1000000,
-                is_httponly=row.isHttpOnly,
-                is_secure=row.isSecure,
+                httponly=row.isHttpOnly,
+                secure=row.isSecure,
             )
 
     def __init__(self, file_path: Path, cookies_db: SQLiteCookies):
@@ -152,6 +152,9 @@ class FirefoxBrowser(BrowserBase):
                         return cookies_db_path
         return None
 
-    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+    def generate_cookies(self,
+                         filter_by: FilterBy,
+                         sort_by: SortBy,
+                         ) -> Iterable[CookieData]:
         """Required override to generate cookies."""
         return self.cookies_db.generate_cookies(filter_by, sort_by)

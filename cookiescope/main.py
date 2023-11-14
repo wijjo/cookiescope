@@ -45,7 +45,12 @@ from browsers import (
     GenericChromeBrowser,
     SafariBrowser,
 )
-from cookies import DEFAULT_SORT_BY, display_cookies, get_filter_by
+from cookies import (
+    DEFAULT_SORT_FIELDS,
+    display_cookies,
+    display_cookie_jar,
+    get_filter_by,
+)
 from utility import abort
 
 
@@ -143,12 +148,16 @@ def main():
     )
     arg_parser.add_argument(dest='COOKIE_SOURCE', help=COOKIE_SOURCE_HELP)
     arg_parser.add_argument(dest='FILTER', nargs='*', help=FILTER_HELP)
+    arg_parser.add_argument('-j', '--jar', dest='JAR', action='store_true',
+                            help='generate Netscape cookie jar format, e.g. for use with "curl"')
     args = arg_parser.parse_args()
     filter_by = get_filter_by(args.FILTER)
     browser = get_browser_for_cookie_source(args.COOKIE_SOURCE)
-    cookies = browser.generate_cookies(filter_by=filter_by, sort_by=DEFAULT_SORT_BY)
-    print(f'=== {browser.name}: {browser.file_path} ===')
-    display_cookies(cookies)
+    cookies = browser.generate_cookies(filter_by=filter_by, sort_by=DEFAULT_SORT_FIELDS)
+    if args.JAR:
+        display_cookie_jar(cookies)
+    else:
+        display_cookies(cookies, heading=f'{browser.name}: {browser.file_path}')
 
 
 if __name__ == '__main__':

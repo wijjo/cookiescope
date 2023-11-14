@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterable, Self
 
-from cookiescope.cookies import Cookie, FilterBy, SortBy
+from cookiescope.cookies import CookieData, FilterBy, SortBy
 
 #: Mapping of platform to possible file locations.
 LocationMap = dict[str, Iterable[str | Path]]
@@ -73,7 +73,7 @@ class BrowserBase(ABC):
         ...
 
     @abstractmethod
-    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[CookieData]:
         """
         Required method to generate cookies with optional filtering and sorting.
 

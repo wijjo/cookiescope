@@ -22,9 +22,9 @@ Binary cookies handling.
 from io import BytesIO
 from pathlib import Path
 from struct import unpack
-from time import gmtime, strftime
+from urllib.parse import unquote
 
-from cookiescope.cookies import Cookie
+from cookiescope.cookies import CookieData
 from cookiescope.utility import abort, open_binary_file
 from typing import AnyStr, IO, Iterator, Self
 
@@ -93,22 +93,15 @@ class BinaryCookiesExtractor:
         """
         return unpack('<i', self.get_bytes(4))[0]
 
-    def get_flags(self) -> str:
+    def get_flags(self) -> tuple[bool, bool]:
         """
         Extract flag string from stream by checking flag integer bits.
 
         Returns:
-            extracted flag string
+            extracted (secure, http_only) boolean flags
         """
-        flag_parts: list[str] = []
         flags = self.get_integer()
-        if flags & 0x00000001:
-            flag_parts.append('Secure')
-        if flags & 0x00000004:
-            flag_parts.append('HttpOnly')
-        # if flags & 0xfffffffa:
-        #     flag_parts.append(f'Unknown(0x{flags & 0xfffffffa:08x})')
-        return '; '.join(flag_parts)
+        return bool(flags & 0x00000001), bool(flags & 0x00000004)
 
     def get_attribute(self) -> str:
         """
@@ -124,17 +117,15 @@ class BinaryCookiesExtractor:
             byte = self.get_bytes(1)
         return value
 
-    def get_date_time(self) -> str:
+    def get_date_time(self) -> int:
         """
         Extract date/time string value from stream.
 
         Returns:
-            extracted date/time string
+            extracted seconds since 1970 (Unix epoch) as integer
         """
-        # Expiry date is in Mac epoch format: Starts from 1/Jan/2001
-        expiry_date_epoch = unpack('<d', self.get_bytes(8))[0] + 978307200
-        # 978307200 is unix epoch of  1/Jan/2001
-        return strftime('%c', gmtime(expiry_date_epoch))
+        # Expiry date is in Mac epoch format: Starts from 1/Jan/2001 (978307200 in seconds)
+        return int(unpack('<d', self.get_bytes(8))[0] + 978307200)
 
     def get_block(self, length) -> Self:
         """
@@ -175,7 +166,7 @@ def is_binary_cookies_file(path: Path) -> bool:
         return True
 
 
-def generate_binary_cookies(path: Path) -> Iterator[Cookie]:
+def generate_binary_cookies(path: Path) -> Iterator[CookieData]:
     """
     Generate cookies by reading file and extracting individual cookies.
 
@@ -197,28 +188,34 @@ def generate_binary_cookies(path: Path) -> Iterator[Cookie]:
             cookie_offsets = [page_block.get_integer() for _idx in range(num_cookies)]
             page_block.get_bytes(4, expect=bytes([0, 0, 0, 0]))
             for offset in cookie_offsets:
-                cookie = {}
                 page_block.set_offset(offset)
                 cookie_size = page_block.get_integer()
                 cookie_block = page_block.get_block(cookie_size)
                 cookie_block.get_bytes(4)  # unknown
-                flags = cookie_block.get_flags()
-                if flags:
-                    cookie['flags'] = flags
+                secure, http_only = cookie_block.get_flags()
                 cookie_block.get_bytes(4)  # unknown
                 url_offset = cookie_block.get_integer()
                 name_offset = cookie_block.get_integer()
                 path_offset = cookie_block.get_integer()
                 value_offset = cookie_block.get_integer()
                 cookie_block.get_bytes(8)  # end of cookie
-                cookie['expires'] = cookie_block.get_date_time()
-                cookie['created'] = cookie_block.get_date_time()
+                expires = cookie_block.get_date_time()
+                created = cookie_block.get_date_time()
                 cookie_block.set_offset(url_offset - 4)
-                cookie['domain'] = cookie_block.get_attribute()
+                domain = cookie_block.get_attribute()
                 cookie_block.set_offset(name_offset - 4)
-                cookie['name'] = cookie_block.get_attribute()
+                name = cookie_block.get_attribute()
                 cookie_block.set_offset(path_offset - 4)
-                cookie['path'] = cookie_block.get_attribute()
+                path = cookie_block.get_attribute()
                 cookie_block.set_offset(value_offset - 4)
-                cookie['value'] = cookie_block.get_attribute()
-                yield cookie
+                value = unquote(cookie_block.get_attribute())
+                yield CookieData(
+                    domain=domain,
+                    name=name,
+                    path=path,
+                    value=value,
+                    http_only=http_only,
+                    secure=secure,
+                    expires=expires,
+                    created=created,
+                )

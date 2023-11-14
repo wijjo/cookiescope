@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Iterable, Self
 
 from cookiescope.extractors import generate_binary_cookies, is_binary_cookies_file
-from cookiescope.cookies import Cookie, FilterBy, SortBy, filter_cookies, sort_cookies
+from cookiescope.cookies import CookieData, FilterBy, SortBy, filter_cookies, sort_cookies
 from .base import BrowserBase, LocationMap
 
 
@@ -51,7 +51,7 @@ class SafariBrowser(BrowserBase):
         """Required method to locate the cookies file."""
         return cls.find_file(cls.cookies_paths)
 
-    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[CookieData]:
         """Required override: query cookies with optional filtering and sorting."""
         filtered_cookies = filter_cookies(generate_binary_cookies(self.file_path), filter_by)
         return sort_cookies(filtered_cookies, sort_by)

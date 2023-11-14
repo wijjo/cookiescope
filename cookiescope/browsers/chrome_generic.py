@@ -53,7 +53,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Iterable, Self
 
-from cookiescope.cookies import Cookie, FilterBy, SortBy
+from cookiescope.cookies import CookieData, FilterBy, SortBy
 from cookiescope.extractors import SQLiteCookiesBase
 from .base import BrowserBase, LocationMap
 
@@ -110,8 +110,8 @@ class GenericChromeSQLiteCookies(SQLiteCookiesBase):
             has_expires=row.has_expires,
             expires_utc=row.expires_utc / 1000000 - 11644473600,
             creation_utc=row.creation_utc / 1000000 - 11644473600,
-            is_httponly=row.is_httponly,
-            is_secure=row.is_secure,
+            httponly=row.is_httponly,
+            secure=row.is_secure,
         )
 
 
@@ -147,6 +147,6 @@ class GenericChromeBrowser(BrowserBase):
         """Required override to locate the cookies database."""
         return cls.find_file(cls.db_paths)
 
-    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[Cookie]:
+    def generate_cookies(self, filter_by: FilterBy, sort_by: SortBy) -> Iterable[CookieData]:
         """Required override to generate cookies."""
         return self.cookies_db.generate_cookies(filter_by, sort_by)
