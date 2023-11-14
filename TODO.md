@@ -51,6 +51,7 @@ See the following links for more information about possible solutions.
 * https://github.com/n8henrie/pycookiecheat
 * https://github.com/pyca/cryptography
 * https://gist.github.com/DakuTree/428e5b737306937628f2944fbfdc4ffc#file-decryptchromecookies-py
+* https://stackoverflow.com/questions/60416350/chrome-80-how-to-decode-cookies
 
 ## User-specified sorting.
 

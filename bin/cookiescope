@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Copyright (C) 2023, Steven Cooper
+#
+# This file is part of Cookiescope.
+#
+# Cookiescope is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Cookiescope is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Cookiescope.  If not, see <https://www.gnu.org/licenses/>.
+#-------------------------------------------------------------------------------
+# This script sits in front of the Python program in order to perform the
+# following prerequisite tasks.
+#   - Create a virtual environment if it is missing.
+#   - Extend the Python library load path to include the wijjet package.
+#   - Use sudo, as needed, to run as root.
+set -e
+
+_cookiescope_run() {
+  cd "$( dirname "$( dirname "$( realpath "${BASH_SOURCE[0]}" )" )" )"
+  if [[ ! -d venv ]]; then
+    echo "The virtual environment folder 'venv' does not exist."
+    local response
+    read -r -p "Is it okay to create a new virtual environment in 'venv'? " response
+    test "$response" = "y" || exit 1
+    python3 -m venv venv
+    venv/bin/pip3 install --upgrade pip
+    test -f requirements.txt && venv/bin/pip3 install -r requirements.txt
+  fi
+  if [[ ! -e venv/bin/python3 ]]; then
+    >&2 echo "Python executable venv/bin/python3 does not exist."
+    exit 1
+  fi
+  PYTHONPATH=$(pwd) exec venv/bin/python3 "cookiescope/main.py" "$@"
+}
+
+_cookiescope_run "$@"
