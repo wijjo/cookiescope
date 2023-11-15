@@ -35,18 +35,9 @@ possible file locations and SQL column mappings, if using SQLite.
 
 ## Encrypted cookie value decryption.
 
-This is a significant amount of work. It involves switching from a stand-alone
-monolithic script to a full-fledged Python project with external dependencies,
-like the cryptography library.
+Decryption is coded, but only tested on MacOS.
 
-Once external dependencies exist, installation and support becomes much more
-complicated. Given the author's personal limited need for just MacOS/Safari,
-encryption will remain outside the scope of this simple project for now.
-
-On the other hand, the existing code should provide a good structure and
-starting point for someone wishing to tackle encryption.
-
-See the following links for more information about possible solutions.
+Useful related links:
 
 * https://github.com/n8henrie/pycookiecheat
 * https://github.com/pyca/cryptography
@@ -67,14 +58,6 @@ character is '~' rather than '='. E.g. `'value~myvalue-\d+'`.
 For now, cookie databases are queried for all cookies, and then filtered and
 sorted in Python post-processing code. But it avoids excess memory consumption
 by using iterators, rather than holding all cookies in memory.
-
-## Split up monolithic script code.
-
-Create more easily-navigated library of classes and functions. The issue becomes
-how to keep it easy to install. It would need a mechanism for locating its 
-library package and modules. It might require a more traditional setup process, 
-and rely on packagers, like Pip, Homebrew, Chocolatey, Apt, Snap, etc., to
-simplify installation and usage. It adds complexity for users.
 
 ## Build a graphical user interface.
 

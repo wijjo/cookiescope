@@ -6,11 +6,6 @@ Cookiescope is a command line tool to query browser cookies.
 
 Run `cookiescope -h` or (`--help`) for more information.
 
-Big caveat: Chrome encrypted cookie values are not queryable or displayable as
-clear text. As mentioned in [TODO.md](./TODO.md), this pulls in dependencies and
-complexity that is beyond the current scope. Unfortunately this means that
-support for the most popular browser is incomplete.
-
 See TODO.md for hints about missing features and future enhancements.
 
 ## Notes
