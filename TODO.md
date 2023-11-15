@@ -35,7 +35,9 @@ possible file locations and SQL column mappings, if using SQLite.
 
 ## Encrypted cookie value decryption.
 
-Decryption is coded, but only tested on MacOS.
+Decryption is coded and tested as follows:
+- MacOS with Chrome.
+- Linux (Debian) with Chromium running in a Gnome desktop environment.
 
 Useful related links:
 
@@ -46,12 +48,16 @@ Useful related links:
 
 ## User-specified sorting.
 
-Current sorting is fixed. Allow the user to specify sort order.
+Current sorting is hard-coded. In the future allow users to specify sort order.
 
-## Regular expression filters.
+## Enhance filters.
 
 Allow filter expression values to be regular expressions when the assignment
 character is '~' rather than '='. E.g. `'value~myvalue-\d+'`.
+
+Support date comparison with ">" and "<" applied to standard date strings.
+
+Support other field comparisons, like booleans, if they are useful.
 
 ## Use SQL WHERE and ORDER BY clauses (for SQLite cookie DBs).
 

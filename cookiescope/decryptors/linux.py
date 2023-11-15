@@ -87,7 +87,7 @@ def gnome_get_password(browser_name: str) -> str | None:
     """
     keyring_label = f'{browser_name} Safe Storage'
     keyring_item_name = browser_name
-    keyring_app_name = browser_name
+    keyring_app_name = browser_name.lower()
     try:
         import gi
         gi.require_version("Secret", "1")
