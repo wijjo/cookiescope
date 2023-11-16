@@ -21,17 +21,28 @@ Cookiescope MacOS decryptor.
 
 # See https://stackoverflow.com/questions/60416350/chrome-80-how-to-decode-cookies
 
-import os
-import json
 import base64
+import json
 import win32crypt
 from Crypto.Cipher import AES
+from pathlib import Path
 
 from .base import DecryptorBase
 
 
 class WindowsDecryptor(DecryptorBase):
     """Windows decryptor."""
+
+    def __init__(self, browser_name: str, state_file: Path):
+        """
+        Base decryptor constructor.
+
+        Args:
+            browser_name: browser name
+            state_file: state file path used for decryption
+        """
+        super().__init__(browser_name)
+        self.state_file = state_file
 
     def decrypt(self, encrypted_value: bytes) -> str:
         """
@@ -43,9 +54,7 @@ class WindowsDecryptor(DecryptorBase):
         Returns:
             decrypted value
         """
-        path = r'%LocalAppData%\Google\Chrome\User Data\Local State'
-        path = os.path.expandvars(path)
-        with open(path, 'r') as file:
+        with open(self.state_file, 'r') as file:
             encrypted_key = json.loads(file.read())['os_crypt']['encrypted_key']
         encrypted_key = base64.b64decode(encrypted_key)                                       # Base64 decoding
         encrypted_key = encrypted_key[5:]                                                     # Remove DPAPI
@@ -55,4 +64,5 @@ class WindowsDecryptor(DecryptorBase):
         ciphertext = encrypted_value[3+12:-16]
         tag = encrypted_value[-16:]
         cipher = AES.new(decrypted_key, AES.MODE_GCM, nonce=nonce)
+        # noinspection PyTypeChecker
         return cipher.decrypt_and_verify(ciphertext, tag)

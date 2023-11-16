@@ -93,8 +93,14 @@ class GenericChromeSQLiteCookies(SQLiteCookiesBase):
         elif sys.platform == 'linux':
             from cookiescope.decryptors.linux import LinuxDecryptor
             self.decryptor = LinuxDecryptor(name)
+        elif sys.platform == 'win32':
+            from cookiescope.decryptors.windows import WindowsDecryptor
+            # Windows decryption needs to open the state file, which is 3 directories
+            # above the cookies database for Chrome-based browsers.
+            state_file = path.parent.parent.parent / 'Local State'
+            self.decryptor = WindowsDecryptor(name, state_file)
         else:
-            assert False
+            raise ValueError(f'Unsupported platform for {name} browser: {sys.platform}')
         super().__init__(path, 'cookies')
 
     def canonicalize_row(self, row: DatabaseRow) -> SQLiteCookiesBase.CanonicalRow:

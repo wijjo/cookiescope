@@ -15,13 +15,13 @@
 # You should have received a copy of the GNU General Public License
 # along with Cookiescope.  If not, see <https://www.gnu.org/licenses/>.
 
-function Run-Cookiescope
+function Invoke-Cookiescope
 {
     param(
         [string[]]$CommandLineArguments
     )
 
-    cd (Get-Item $PSScriptRoot).parent.FullName
+    Set-Location (Get-Item $PSScriptRoot).parent.FullName
 
     if (-not (Test-Path venv -PathType Container))
     {
@@ -32,13 +32,14 @@ function Run-Cookiescope
             Exit
         }
         Write-Output "Creating virtual environment 'venv' ..."
-        python -m venv venv
-        venv\Scripts\pip install --upgrade pip
-        venv\Scripts\pip install wheel
-        venv\Scripts\pip install -r "$CoreRoot\requirements.txt"
+        python -m venv venv --system-site-packages
+        venv\Scripts\python.exe -m pip install --upgrade pip
+        venv\Scripts\python.exe -m pip install wheel
+        venv\Scripts\python.exe -m pip install -r requirements.txt
     }
 
+    $env:PYTHONPATH="."
     venv\Scripts\python cookiescope\main.py @CommandLineArguments
 }
 
-Run-Cookiescope $args
+Invoke-Cookiescope $args
