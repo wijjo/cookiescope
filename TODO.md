@@ -38,6 +38,7 @@ possible file locations and SQL column mappings, if using SQLite.
 Decryption is coded and tested as follows:
 - MacOS with Chrome.
 - Linux (Debian) with Chromium running in a Gnome desktop environment.
+- Windows with Edge and Chrome.
 
 Useful related links:
 
@@ -59,6 +60,11 @@ Support date comparison with ">" and "<" applied to standard date strings.
 
 Support other field comparisons, like booleans, if they are useful.
 
+## Cookie deletion and clearing.
+
+This capability requires the ability to update a database or rewrite the binary
+cookies file format without corrupting it.
+
 ## Use SQL WHERE and ORDER BY clauses (for SQLite cookie DBs).
 
 For now, cookie databases are queried for all cookies, and then filtered and
@@ -69,8 +75,3 @@ by using iterators, rather than holding all cookies in memory.
 
 Look for a simple cross-platform way to wrap the tool in a GUI. Perhaps Tk would
 be good enough.
-
-## Cookie deletion and clearing.
-
-This capability requires the ability to update a database or rewrite the binary
-cookies file format without corrupting it.
