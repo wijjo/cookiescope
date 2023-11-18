@@ -36,7 +36,7 @@ import argparse
 import os
 from pathlib import Path
 
-from browsers import (
+from cookiescope.browsers import (
     BrowserBase,
     ChromeBrowser,
     ChromiumBrowser,
@@ -45,13 +45,13 @@ from browsers import (
     GenericChromeBrowser,
     SafariBrowser,
 )
-from cookies import (
+from cookiescope.cookies import (
     DEFAULT_SORT_FIELDS,
     display_cookies,
     display_cookie_jar,
     get_filter_by,
 )
-from utility import abort
+from cookiescope.utility import abort
 
 
 #: Command line help description.

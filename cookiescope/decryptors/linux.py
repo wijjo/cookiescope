@@ -51,10 +51,10 @@ Cookiescope Linux decryptor.
 """
 
 from cookiescope.utility import abort
-from .linux_macos import LinuxMacOSDecryptorBase
+from .posix import PosixDecryptorBase
 
 
-class LinuxDecryptor(LinuxMacOSDecryptorBase):
+class LinuxDecryptor(PosixDecryptorBase):
     """Linux decryptor."""
 
     #: Decryption iteration count.

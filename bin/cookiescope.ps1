@@ -34,8 +34,7 @@ function Invoke-Cookiescope
         Write-Output "Creating virtual environment 'venv' ..."
         python -m venv venv --system-site-packages
         venv\Scripts\python.exe -m pip install --upgrade pip
-        venv\Scripts\python.exe -m pip install wheel
-        venv\Scripts\python.exe -m pip install -r requirements.txt
+        venv\Scripts\python.exe -m pip install .
     }
 
     $env:PYTHONPATH="."

@@ -8,45 +8,52 @@ Cookiescope is a command line tool to query browser cookies.
 
 See [TODO.md](./TODO.md) for hints about missing features and future enhancements.
 
-## Prerequisites
+## Setup (using a virtual environment)
 
-### Command line environment with Git
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for an alternative to Pip-installing
+Cookiescope. It offers the option to easily run from a source code environment.
 
-For now, this is set up to run in a command line environment directly from a
-local cloned Git repository.
-
-## Setup and basic usage
-
-Clone the Cookiescope GitHub repository.
+On Linux and MacOS the following command sequence creates a virtual environment
+and runs Cookiescope, to display help in this case.
 
 ```shell
-git clone https://github.com/wijjo/cookiescope.git
+python3 -m venv venv
 
-cd cookiescope
+source venv/bin/activate
+
+pip3 install cookiescope
+
+hash -r
+
+cookiescope -h
 ```
 
-### Getting help
+This is the equivalent command sequence for Windows.
+
+```powershell
+py -m venv venv
+
+venv\Scripts\Activate.ps1
+
+pip install cookiescope
+
+cookiescope -h
+```
+
+See the Usage section for other useful Cookiescope commands.
+
+## Usage examples
+
+The examples below assume Cookiescope is available through the system path. If 
+not, see the section above for how to run it from a local source repository.
+
+### Get help
 
 Cookiescope supports the `-h/--help` options for command line help.
 
-In MacOS or Linux:
-
 ```shell
-bin/cookiscope -h
+cookiescope -h
 ```
-
-In Windows:
-
-```powershell
-bin\cookiescope.ps1 -h
-```
-
-Subsequent examples will omit the `bin` directory and the script extension, if
-any, and just mention `cookiescope`. Note that you can either add the `bin`
-directory to your path, or create a symbolic link to the appropriate Cookiescope
-script in an existing directory that is already in your execution path.
-
-## Usage examples
 
 ### Display all browser cookies
 
@@ -81,6 +88,14 @@ useful for testing with `curl`.
 cookiescope chrome -j
 ```
 
+## Building Cookiescope packages
+
+In a Cookiescope source environment the following command builds packages in the
+`dist` subdirectory, e.g. for uploading to PyPI.
+
+```shell
+tools/build.sh
+```
 ## Notes
 
 This has been primarily used with MacOS Safari. But it also has been (briefly)
@@ -97,18 +112,49 @@ Here is what is currently supported:
 For any developer that wishes to extend it, the framework is designed for easy
 expansion and adaptation.
 
-## Adopt Me!
-
-The current project owner would be more than happy to hand off ownership of this
-project. Ideally, it would to someone who is willing to invest time to add
-decryption, increase browser/OS coverage, fix bugs, and providing user support
-(if demanded).
-
 ## Contact:
 
 steve at wijjo.com
 
 ## Credits
 
-Binary cookies parsing code was originally based on this project:
+### BinaryCookieReader
+
+The Safari binary cookies parsing code was originally based on the
+BinaryCookieReader project:
+
 https://github.com/ktnjared/BinaryCookieReader.git
+
+### Pycookiecheat
+
+The Linux/MacOS decryption code was based on the pycookiecheat project:
+
+https://github.com/n8henrie/pycookiecheat
+
+The code was reorganized to better fit into the structure of Cookiescope.
+
+#### Pycookiecheat MIT License
+
+The pycookiecheat MIT License is copied below:
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Nathan Henrie
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

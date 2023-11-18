@@ -24,7 +24,7 @@ from time import gmtime, strftime
 from typing import Iterable
 from urllib.parse import quote
 
-from utility import abort, warning
+from cookiescope.utility import abort, warning
 
 
 @dataclass

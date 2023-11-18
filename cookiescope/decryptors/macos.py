@@ -50,10 +50,10 @@ Cookiescope MacOS decryptor.
 
 import keyring
 
-from .linux_macos import LinuxMacOSDecryptorBase
+from .posix import PosixDecryptorBase
 
 
-class MacOSDecryptor(LinuxMacOSDecryptorBase):
+class MacOSDecryptor(PosixDecryptorBase):
     """MacOS decryptor."""
 
     #: Decryption iteration count.

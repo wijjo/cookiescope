@@ -32,7 +32,7 @@ _cookiescope_run() {
     test "$response" = "y" || exit 1
     python3 -m venv venv --system-site-packages
     venv/bin/pip3 install --upgrade pip
-    test -f requirements.txt && venv/bin/pip3 install -r requirements.txt
+    venv/bin/pip3 install .
   fi
   if [[ ! -e venv/bin/python3 ]]; then
     >&2 echo "Python executable venv/bin/python3 does not exist."

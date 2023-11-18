@@ -45,7 +45,7 @@
 # THE SOFTWARE.
 
 """
-Cookiescope common Linux/MacOS decryption support.
+Cookiescope common Posix, i.e. Linux and MacOS, decryption support.
 """
 
 from abc import ABC, abstractmethod
@@ -58,8 +58,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from .base import DecryptorBase
 
 
-class LinuxMacOSDecryptorBase(DecryptorBase, ABC):
-    """Linux/MacOS decryptor base class."""
+class PosixDecryptorBase(DecryptorBase, ABC):
+    """Posix decryptor base class."""
 
     #: Decryption iteration count (subclass must provide).
     iterations: int = None

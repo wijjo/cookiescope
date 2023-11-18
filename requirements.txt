@@ -1,4 +1,0 @@
-cryptography; sys.platform == 'darwin' or sys.platform == 'linux'
-keyring; sys.platform == 'darwin' or sys.platform == 'linux'
-pypiwin32; sys.platform == 'win32'
-pycryptodome; sys.platform == 'win32'

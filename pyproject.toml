@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cookiescope"
+version = "0.0.2"
+authors = [
+  { name="Steve Cooper", email="steve@wijjo.com" },
+]
+description = "Cookie inspector."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "cryptography==41.0.5; sys_platform=='darwin' or sys_platform=='linux'",
+    "keyring==24.3.0; sys_platform=='darwin' or sys_platform=='linux'",
+    "pypiwin32==223; sys_platform=='win32'",
+    "pycryptodome==3.19.0; sys_platform=='win32'"
+]
+
+[project.optional-dependencies]
+build = [
+    "build"
+]
+
+[project.urls]
+Homepage = "https://github.com/wijjo/cookiescope"
+
+[project.scripts]
+cookiescope = "cookiescope.main:main"
