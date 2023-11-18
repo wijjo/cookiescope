@@ -16,8 +16,11 @@ Cookiescope. It offers the option to easily run from a source code environment.
 On Linux and MacOS the following command sequence creates a virtual environment
 and runs Cookiescope, to display help in this case.
 
+The `--system-site-packages` option is important for Linux. It allows the
+virtual environment to inherit access to system-installed packages like `gi`.
+
 ```shell
-python3 -m venv venv
+python3 -m venv venv --system-site-packages
 
 source venv/bin/activate
 
